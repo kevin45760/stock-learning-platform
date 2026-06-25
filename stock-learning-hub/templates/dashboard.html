@@ -56,9 +56,11 @@
         </div>
     </div>
 
-    <script src="https://cdn.socketio.org/4.7.2/socketio.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        const socket = io();
+        const socket = io({
+            transports: ['websocket', 'polling']
+        });
         let currentRoom = "新手大廳";
 
         // 一進來網頁立刻加入預設大廳
