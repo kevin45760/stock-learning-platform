@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>📈 學院大廳 - 即時股市與切磋室</title>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: white; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; background: #1e293b; padding: 10px 20px; border-radius: 12px; }
+        .layout { display: flex; margin-top: 20px; gap: 20px; height: 75vh; }
+        .left-panel { width: 45%; background: #1e293b; padding: 15px; border-radius: 12px; overflow-y: auto; }
+        .right-panel { width: 53%; background: #1e293b; padding: 15px; border-radius: 12px; display: flex; flex-direction: column; }
+        
+        .stock-card { background: #0f172a; padding: 12px; margin-bottom: 10px; border-radius: 8px; border-left: 5px solid #38bdf8; }
+        .up { color: #ef4444; font-weight: bold; }
+        .down { color: #22c55e; font-weight: bold; }
+        
+        .chat-box { flex-grow: 1; background: #0f172a; border-radius: 8px; padding: 10px; overflow-y: auto; margin-bottom: 10px; }
+        .msg-line { margin: 8px 0; display: flex; align-items: center; gap: 8px; }
+        .avatar { width: 30px; height: 30px; border-radius: 50%; object-fit: cover; background: #ccc; }
+        
+        .room-ctrl { display: flex; gap: 10px; margin-bottom: 10px; }
+        input { padding: 8px; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="header">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="/static/uploads/{{ user.avatar }}" class="avatar" style="width: 45px; height: 45px;">
+            <h3>學員：{{ user.username }} (線上切磋中)</h3>
+        </div>
+        <a href="/logout" style="color: #ef4444; font-weight: bold;">登出學院 🚪</a>
+    </div>
+
+    <div class="layout">
+        <div class="left-panel">
+            <h3 style="color:#38bdf8; border-bottom: 1px solid #475569; padding-bottom:5px; margin-top:0;">📊 電視牆：即時股市數據教學</h3>
+            <div id="stock-container">正在連線股市魔法陣...</div>
+        </div>
+
+        <div class="right-panel">
+            <h3 style="margin-top: 0; color:#a855f7;">⚔️ 各路高手切磋聊天室</h3>
+            
+            <div class="room-ctrl">
+                <input type="text" id="room-input" placeholder="輸入你想創建或加入的聊天室名稱">
+                <button onclick="switchRoom()" style="background:#a855f7; border:none; color:white; font-weight:bold; padding:8px 12px; border-radius:6px; cursor:pointer;">切換/創聊天室</button>
+            </div>
+            <p style="margin: 0 0 10px 0; font-size:0.9rem; color:#94a3b8;">當前聊天室：<span id="current-room-name" style="color:white; font-weight:bold;">新手大廳</span></p>
+
+            <div class="chat-box" id="chat-messages"></div>
+
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="message-input" placeholder="輸入切磋心得..." style="flex-grow: 1;">
+                <button onclick="sendMessage()" style="background:#38bdf8; border:none; color:#0f172a; font-weight:bold; padding:0 20px; border-radius:6px; cursor:pointer;">傳送</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socketio.org/4.7.2/socketio.min.js"></script>
+    <script>
+        const socket = io();
+        let currentRoom = "新手大廳";
+
+        // 一進來網頁立刻加入預設大廳
+        socket.emit('join', { room: currentRoom });
+
+        // 1. 監聽後端廣播的即時股市
+        socket.on('market_update', function(stocks) {
+            const container = document.getElementById('stock-container');
+            container.innerHTML = '';
+            stocks.forEach(s => {
+                const isUp = s.change >= 0;
+                const colorClass = isUp ? 'up' : 'down';
+                const sign = isUp ? '▲' : '▼';
+                
+                container.innerHTML += `
+                    <div class="stock-card" title="${s.desc}">
+                        <span style="font-size:1.1rem; font-weight:bold;">${s.name}</span>
+                        <div style="float: right; text-align: right;">
+                            <span style="font-size:1.2rem; font-weight:bold;">$${s.price}</span><br>
+                            <span class="${colorClass}">${sign} ${Math.abs(s.change)}%</span>
+                        </div>
+                        <p style="margin: 5px 0 0 0; font-size:0.8rem; color:#94a3b8;">💡 觀念教學：${s.desc}</p>
+                    </div>`;
+            });
+        });
+
+        // 2. 監聽即時聊天訊息
+        socket.on('chat_msg', function(data) {
+            const chatBox = document.getElementById('chat-messages');
+            chatBox.innerHTML += `
+                <div class="msg-line">
+                    <img src="/static/uploads/${data.avatar}" class="avatar">
+                    <div>
+                        <strong style="color:#38bdf8;">${data.username}</strong>：
+                        <span>${data.msg}</span>
+                    </div>
+                </div>`;
+            chatBox.scrollTop = chatBox.scrollHeight; // 自動捲動到底部
+        });
+
+        // 傳送訊息
+        function sendMessage() {
+            const input = document.getElementById('message-input');
+            if(input.value.trim()) {
+                socket.emit('send_msg', { room: currentRoom, msg: input.value.trim() });
+                input.value = '';
+            }
+        }
+
+        // 切換、自創聊天室
+        function switchRoom() {
+            const roomInput = document.getElementById('room-input').value.trim();
+            if(roomInput && roomInput !== currentRoom) {
+                currentRoom = roomInput;
+                document.getElementById('current-room-name').innerText = currentRoom;
+                document.getElementById('chat-messages').innerHTML = ''; // 清空舊房間訊息
+                socket.emit('join', { room: currentRoom });
+                document.getElementById('room-input').value = '';
+            }
+        }
+
+        // 綁定 Enter 鍵送出訊息
+        document.getElementById('message-input').addEventListener('keypress', function(e) {
+            if(e.key === 'Enter') sendMessage();
+        });
+    </script>
+</body>
+</html>
