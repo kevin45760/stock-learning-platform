@@ -46,23 +46,42 @@
 
         document.getElementById('auth-form').addEventListener('submit', async (e) => {
             e.preventDefault();
+            const msgTemplate = document.getElementById('msg');
+            msgTemplate.innerText = "處理中，請稍候...";
+            msgTemplate.style.color = '#38bdf8';
+
             const formData = new FormData(e.target);
-            const url = isLoginMode ? '/api/login' : '/api/register';
+            // ❌ 原本寫死路徑的方式：
+            // const url = isLoginMode ? '/api/login' : '/api/register';
 
-            const response = await fetch(url, { method: 'POST', body: formData });
-            const data = await response.json();
-
-            if (data.success) {
-                if (isLoginMode) {
-                    window.location.href = '/dashboard';
-                } else {
-                    document.getElementById('msg').style.color = '#22c55e';
-                    document.getElementById('msg').innerText = data.msg;
-                    toggleMode(); // 註冊成功後自動跳回登入
+            // 🚀 改成讓 Flask 自動填入正確的動態路由網址：
+            const url = isLoginMode ? "{{ url_for('api_login') }}" : "{{ url_for('api_register') }}";
+            try {
+                const response = await fetch(url, { method: 'POST', body: formData });
+                
+                if (!response.ok) {
+                    throw new Error(`伺服器回應錯誤碼: ${response.status}`);
                 }
-            } else {
-                document.getElementById('msg').style.color = '#ef4444';
-                document.getElementById('msg').innerText = data.msg;
+                
+                const data = await response.json();
+
+                if (data.success) {
+                    if (isLoginMode) {
+                        window.location.href = '/dashboard';
+                    } else {
+                        msgTemplate.style.color = '#22c55e';
+                        msgTemplate.innerText = data.msg;
+                        alert(data.msg); // 彈窗提示註冊成功
+                        toggleMode(); 
+                    }
+                } else {
+                    msgTemplate.style.color = '#ef4444';
+                    msgTemplate.innerText = data.msg;
+                }
+            } catch (err) {
+                msgTemplate.style.color = '#ef4444';
+                msgTemplate.innerText = `連線失敗或後端拋出異常：${err.message}`;
+                console.error(err);
             }
         });
     </script>

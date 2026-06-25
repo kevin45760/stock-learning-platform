@@ -22,17 +22,31 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 login_manager = LoginManager(app)
 login_manager.login_view = 'login_page'
 
-# ----------------- 資料庫設定 -----------------
+# 1. 確保 User 資料庫模型欄位完全正確
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(50), unique=True, nullable=False)
-    password_hash = db.Column(db.String(128), nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False) 
     avatar = db.Column(db.String(200), default='default_avatar.png')
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# 🚀 2. 核心關鍵：在 Flask 啟動的第一時間，強迫自動建立資料庫與表格
+with app.app_context():
+    try:
+        # 如果儲存圖片的資料夾不存在，自動建立
+        if not os.path.exists(app.config['UPLOAD_FOLDER']):
+            os.makedirs(app.config['UPLOAD_FOLDER'])
+            print("==== [Render 提示] 已成功自動建立 static/uploads 資料夾 ====")
+            
+        # 自動偵測並建立 database.db 和其中的 User 表格
+        db.create_all()
+        print("==== [Render 提示] SQLite 資料庫與資料表初始化/同步成功！ ====")
+    except Exception as e:
+        print(f"==== [Render 警告] 初始化資料庫時發生異常: {str(e)} ====") 
+        
 # 模擬台灣股市即時數據（每2秒會隨機跳動）
 STOCKS = {
     "2330 台積電": {"price": 950.0, "change": 0.0, "desc": "晶片巨頭，台灣的護國神山。"},
