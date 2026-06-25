@@ -7,15 +7,25 @@ from flask_socketio import SocketIO, emit, join_room
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'stock_secret_key_9999'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///database.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-app.config['UPLOAD_FOLDER'] = os.path.join('static', 'uploads')
+# 🚀 1. 取得目前檔案所在的絕對路徑資料夾
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-# 確保上傳資料夾存在
-if not os.path.exists(app.config['UPLOAD_FOLDER']):
-    os.makedirs(app.config['UPLOAD_FOLDER'])
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, 'templates'),
+    static_folder=os.path.join(BASE_DIR, 'static')
+)
+
+app.config['SECRET_KEY'] = 'stock_secret_key_9999'
+
+# 🚀 2. 將資料庫與圖片上傳夾全部鎖定為絕對路徑，並防止多執行緒鎖死
+DB_PATH = os.path.join(BASE_DIR, 'database.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f"sqlite:///{DB_PATH}"
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "connect_args": {"timeout": 15}
+}
+app.config['UPLOAD_FOLDER'] = os.path.join(BASE_DIR, 'static', 'uploads')
 
 db = SQLAlchemy(app)
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -33,17 +43,13 @@ class User(UserMixin, db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# 🚀 2. 核心關鍵：在 Flask 啟動的第一時間，強迫自動建立資料庫與表格
+# 🚀 3. 在 Flask 啟動的第一時間，強迫在絕對路徑自動建立資料夾與資料庫表格
 with app.app_context():
     try:
-        # 如果儲存圖片的資料夾不存在，自動建立
         if not os.path.exists(app.config['UPLOAD_FOLDER']):
             os.makedirs(app.config['UPLOAD_FOLDER'])
-            print("==== [Render 提示] 已成功自動建立 static/uploads 資料夾 ====")
-            
-        # 自動偵測並建立 database.db 和其中的 User 表格
         db.create_all()
-        print("==== [Render 提示] SQLite 資料庫與資料表初始化/同步成功！ ====")
+        print("==== [Render 提示] SQLite 資料庫與資料表初始化成功！ ====")
     except Exception as e:
         print(f"==== [Render 警告] 初始化資料庫時發生異常: {str(e)} ====") 
 
@@ -56,12 +62,10 @@ STOCKS = {
 }
 
 # ----------------- 網頁路由 -----------------
-# ----------------- 網頁路由 -----------------
 @app.route('/')
 def login_page():
     if current_user.is_authenticated:
         return redirect(url_for('dashboard'))
-    #  👇 這裡原本是 'index.html'，請改成 'stock_login.html'
     return render_template('stock_login.html')
 
 @app.route('/dashboard')
@@ -90,11 +94,9 @@ def api_register():
             file = request.files['avatar']
             if file and file.filename != '':
                 try:
-                    # 確保資料夾存在
                     if not os.path.exists(app.config['UPLOAD_FOLDER']):
                         os.makedirs(app.config['UPLOAD_FOLDER'])
                     
-                    # 重新生成安全檔名並儲存
                     base_secure = secure_filename(file.filename)
                     avatar_filename = f"{username}_{random.randint(1000, 9999)}_{base_secure}"
                     file.save(os.path.join(app.config['UPLOAD_FOLDER'], avatar_filename))
@@ -102,7 +104,7 @@ def api_register():
                     print(f" ==== [圖片儲存失敗，自動切換預設頭像]: {str(img_err)} ====")
                     avatar_filename = 'default_avatar.png'
 
-        # 密碼加密並寫入資料庫
+        # 密碼加密並寫入資料庫（指定與新版 Werkzeug 完全相容的雜湊演算法）
         hashed_pwd = generate_password_hash(password, method='pbkdf2:sha256')
         new_user = User(username=username, password_hash=hashed_pwd, avatar=avatar_filename)
         
@@ -112,7 +114,6 @@ def api_register():
         return jsonify({'success': True, 'msg': '註冊成功！已為您創立魔法頭像，請切換至登入！'})
 
     except Exception as total_err:
-        # 如果真的發生未知錯誤，至少要把錯誤訊息印在 Render Log 裡面給我們看，而不是默默死掉
         print(f" ==== [註冊 API 內部核心崩潰]: {str(total_err)} ====")
         return jsonify({'success': False, 'msg': f'後端系統寫入失敗：{str(total_err)}'})
 
@@ -170,6 +171,6 @@ def update_stock_market_loop():
 
 if __name__ == '__main__':
     with app.app_context():
-        db.create_all() # 自動生成 database.db 檔案
+        db.create_all()
     socketio.start_background_task(update_stock_market_loop)
     socketio.run(app, debug=True)
