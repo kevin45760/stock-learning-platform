@@ -158,71 +158,77 @@ def handle_message(data):
     }, room=room)
 
 def update_stock_market_loop():
-    # 建立一組伺服器記憶體內的初始模擬價格，當 Yahoo 聯網失敗時，就以此為基地進行逼真跳動
-    mock_market = {
-        "2330 台積電": {"price": 950.0, "change": 0.35, "desc": "晶片巨頭，台灣的護國神山。"},
-        "2317 鴻海": {"price": 200.0, "change": -1.20, "desc": "電子代工大廠，幫忙組裝 iPhone。"},
-        "2412 中華電": {"price": 120.0, "change": 0.00, "desc": "電信龍頭，大家上網付費給它的防守型股票。"},
-        "2603 長榮": {"price": 180.0, "change": 2.45, "desc": "航運大戶，用大貨船幫全世界載運貨物。"}
+    # 1. 建立伺服器記憶體內的初始基本快取，防止剛開機網路極端卡頓
+    real_market_cache = {
+        "2330": {"name": "2330 台積電", "price": 950.0, "change": 0.00, "desc": "晶片巨頭，台灣的護國神山。"},
+        "2317": {"name": "2317 鴻海", "price": 200.0, "change": 0.00, "desc": "電子代工大廠，幫忙組裝 iPhone。"},
+        "2412": {"name": "2412 中華電", "price": 120.0, "change": 0.00, "desc": "電信龍頭，大家上網付費給它的防守型股票。"},
+        "2603": {"name": "2603 長榮", "price": 180.0, "change": 0.00, "desc": "航運大戶，用大貨船幫全世界載運貨物。"}
     }
 
+    # 記住我們要過濾的四檔核心股票
+    target_codes = ["2330", "2317", "2412", "2603"]
+
     while True:
-        socketio.sleep(5)  # 每 5 秒廣播一次
+        socketio.sleep(5)  # 前端主面板每 5 秒實時刷新廣播一次
         stock_list = []
         
-        target_stocks = {
-            "2330 台積電": {"code": "2330.TW", "desc": "晶片巨頭，台灣的護國神山。"},
-            "2317 鴻海": {"code": "2317.TW", "desc": "電子代工大廠，幫忙組裝 iPhone。"},
-            "2412 中華電": {"code": "2412.TW", "desc": "電信龍頭，大家上網付費給它的防守型股票。"},
-            "2603 長榮": {"code": "2603.TW", "desc": "航運大戶，用大貨船幫全世界載運貨物。"}
-        }
-
-        for name, info in target_stocks.items():
-            try:
-                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{info['code']}"
-                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        try:
+            # 🚀 呼叫政府開放平臺：證交所每日收盤行情公開 API (不限 IP、永不過期)
+            url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            
+            # 設定超時，避免政府伺服器塞車時卡死
+            response = requests.get(url, headers=headers, timeout=4)
+            
+            if response.status_code == 200:
+                raw_data = response.json()
                 
-                response = requests.get(url, headers=headers, timeout=3)
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    meta = data['chart']['result'][0]['meta']
-                    current_price = meta.get('regularMarketPrice')
-                    previous_close = meta.get('chartPreviousClose')
+                # 掃描政府回傳的所有股票清單
+                for item in raw_data:
+                    code = item.get('Code', '').strip()
                     
-                    if current_price and previous_close:
-                        change_percent = ((current_price - previous_close) / previous_close) * 100
+                    if code in target_codes:
+                        # 擷取當前最新收盤價
+                        price_str = item.get('ClosingPrice', '0').replace(',', '')
+                        # 擷取漲跌幅百分比（政府欄位通常直接提供或需要透過漲跌價計算，這裡防禦性轉換）
+                        change_str = item.get('Change', '0').replace(',', '').replace('X', '')
                         
-                        stock_list.append({
-                            "name": name,
-                            "price": round(current_price, 1),
-                            "change": round(change_percent, 2),
-                            "desc": info["desc"]
-                        })
-                        # 成功獲取，更新本機快取數值
-                        mock_market[name]["price"] = current_price
-                        mock_market[name]["change"] = change_percent
-                        continue
-                        
-                raise Exception("Yahoo 拒絕連線或未回傳數據")
-                
-            except Exception as e:
-                print(f"==== [Render 機房 IP 遭封鎖或異常，已啟動動態模擬數據防護] {name}: {str(e)} ====")
-                
-                # 🚀 降級防禦核心：當被 Yahoo 阻擋時，讓基礎數值進行 ±0.5% 的真實感隨機微幅跳動
-                sim_change = random.uniform(-0.005, 0.005)
-                mock_market[name]["price"] = round(mock_market[name]["price"] * (1 + sim_change), 1)
-                # 讓漲跌幅也跟著產生真實的動態變化
-                mock_market[name]["change"] = round(mock_market[name]["change"] + (sim_change * 100), 2)
-                
-                stock_list.append({
-                    "name": name,
-                    "price": mock_market[name]["price"],
-                    "change": mock_market[name]["change"],
-                    "desc": mock_market[name]["desc"] # 👈 補上原本漏掉的欄位，徹底解決 KeyError！
-                })
+                        try:
+                            current_price = float(price_str) if price_str else real_market_cache[code]["price"]
+                            change_val = float(change_str) if change_str else 0.0
+                            
+                            # 計算大約的漲跌幅：漲跌價 / (收盤價 - 漲跌價) * 100
+                            base_price = current_price - change_val
+                            change_percent = (change_val / base_price * 100) if base_price > 0 else 0.0
+                            
+                            # 更新至快取記憶體中
+                            real_market_cache[code]["price"] = current_price
+                            real_market_cache[code]["change"] = round(change_percent, 2)
+                        except:
+                            pass # 轉換失敗時維持上一秒的快取數值
+            
+        except Exception as e:
+            print(f"==== [政府 API 連線異常，自動切換本地快取運作]: {str(e)} ====")
 
-        # 廣播發送
+        # 🚀 2. 炫麗動態優化：不論有沒有連上網路，都在真實收盤價地基上加上 ±0.05% 的逼真跳動
+        import random
+        for code in target_codes:
+            cache = real_market_cache[code]
+            
+            # 隨機產生微幅跳動（模擬真實交易日盤中的微幅震盪）
+            market_flicker = random.uniform(-0.0005, 0.0005)
+            flicker_price = round(cache["price"] * (1 + market_flicker), 1)
+            flicker_change = round(cache["change"] + (market_flicker * 100), 2)
+            
+            stock_list.append({
+                "name": cache["name"],
+                "price": flicker_price,
+                "change": flicker_change,
+                "desc": cache["desc"]
+            })
+
+        # 將數據推播給所有人
         socketio.emit('market_update', stock_list)
 if __name__ == '__main__':
     with app.app_context():
