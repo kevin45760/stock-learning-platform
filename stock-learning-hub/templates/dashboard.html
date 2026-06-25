@@ -20,9 +20,10 @@
             color: var(--text-main);
             margin: 0;
             padding: 20px;
-            overflow: hidden;
             height: 100vh;
             box-sizing: border-box;
+            display: flex;
+            flex-direction: column;
         }
 
         /* 頂部導航欄 */
@@ -36,21 +37,23 @@
             border-radius: 16px;
             border: 1px solid var(--border-color);
             margin-bottom: 20px;
+            flex-shrink: 0; /* 防止頂部被壓縮 */
         }
         .user-info { display: flex; align-items: center; gap: 12px; }
         .user-avatar { width: 36px; height: 36px; border-radius: 50%; border: 2px solid var(--accent-blue); }
         .logout-btn { color: #94a3b8; text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
         .logout-btn:hover { color: var(--up-red); }
 
-        /* 主佈局：股市占主體，聊天室靠右 */
+        /* 主佈局：防止內容被喀到，高度動態計算 */
         .main-container {
             display: flex;
             gap: 20px;
-            height: calc(100vh - 110px);
+            flex: 1;
+            min-height: 0; /* 關鍵：允許子元件正常縮放，不擠壓底部 */
             position: relative;
         }
 
-        /* 🚀 主要面板：股市看板（佔滿剩餘寬度） */
+        /* 主要面板：股市看板 */
         .stock-main-panel {
             flex: 1;
             background: var(--panel-bg);
@@ -97,7 +100,7 @@
             background: rgba(255, 255, 255, 0.03);
         }
 
-        /* 🚀 右側側邊欄：點進去才展開的聊天室 */
+        /* 右側側邊欄聊天室 */
         .chat-sidebar {
             width: 320px;
             background: var(--panel-bg);
@@ -107,10 +110,10 @@
             display: flex;
             flex-direction: column;
             transition: transform 0.3s ease, width 0.3s ease;
-            position: relative;
+            flex-shrink: 0;
         }
 
-        /* 聊天室收合狀態的樣式類別 */
+        /* 聊天室收合狀態 */
         .chat-sidebar.collapsed {
             width: 60px;
             cursor: pointer;
@@ -139,6 +142,7 @@
             background: rgba(0, 0, 0, 0.1);
             border-top-left-radius: 16px;
             border-top-right-radius: 16px;
+            flex-shrink: 0;
         }
         .chat-title { font-weight: bold; display: flex; align-items: center; gap: 8px; }
         .toggle-chat-btn {
@@ -148,16 +152,19 @@
 
         .chat-body {
             flex: 1; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px;
+            min-height: 0;
         }
         .msg-line { display: flex; gap: 10px; align-items: flex-start; }
         .msg-avatar { width: 32px; height: 32px; border-radius: 50%; background: #475569; }
         .msg-bubble {
             background: rgba(15, 23, 42, 0.6); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-color);
-            max-width: 80%; font-size: 0.95rem;
+            max-width: 80%; font-size: 0.95rem; word-break: break-all;
         }
 
         .chat-footer {
             padding: 15px; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 10px;
+            background: rgba(0, 0, 0, 0.1); border-bottom-left-radius: 16px; border-bottom-right-radius: 16px;
+            flex-shrink: 0;
         }
         .input-row { display: flex; gap: 8px; }
         .chat-input {
@@ -211,7 +218,7 @@
         <div class="chat-sidebar" id="chatSidebar">
             <div class="chat-header" onclick="checkExpand(event)">
                 <div class="chat-title">
-                    💬 學院交流切磋室 
+                    💬 學院交流室 
                     <span class="room-badge" id="current-room-name">大廳</span>
                 </div>
                 <button class="toggle-chat-btn" id="toggleChatBtn" onclick="toggleChat(event)">＞</button>
@@ -236,7 +243,6 @@
 
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <script>
-        // 建立防禦性 Socket 連線
         const socket = io({
             transports: ['websocket', 'polling']
         });
@@ -246,9 +252,9 @@
         // 進入網頁自動加入大廳
         socket.emit('join', { room: currentRoom });
 
-        // 🚀 側邊聊天室收合控制邏輯
+        // 側邊聊天室收合控制邏輯
         function toggleChat(e) {
-            if(e) e.stopPropagation(); // 防止事件向上冒泡
+            if(e) e.stopPropagation();
             const sidebar = document.getElementById('chatSidebar');
             const btn = document.getElementById('toggleChatBtn');
             
@@ -261,7 +267,6 @@
             }
         }
 
-        // 如果聊天室是收合狀態，點擊整條標題欄也可以直接展開
         function checkExpand(e) {
             const sidebar = document.getElementById('chatSidebar');
             if (sidebar.classList.contains('collapsed')) {
@@ -269,22 +274,23 @@
             }
         }
 
-        // 接收即時股市數據並動態渲染表格
+        // 🚀 修正：對齊後端傳入的股票列表渲染
         socket.on('market_update', function(stockList) {
             const tbody = document.getElementById('stock-table-body');
+            if (!tbody) return;
             tbody.innerHTML = '';
 
             stockList.forEach(stock => {
                 const isUp = stock.change >= 0;
                 const sign = isUp ? '▲' : '▼';
-                const colorClass = isUp ? 'style="color: var(--up-red); font-weight:bold;"' : 'style="color: var(--down-green); font-weight:bold;"';
+                const colorStyle = isUp ? 'style="color: var(--up-red); font-weight:bold; text-align: right;"' : 'style="color: var(--down-green); font-weight:bold; text-align: right;"';
                 
                 const rowHtml = `
                     <tr class="stock-row">
                         <td style="font-weight: 600;">${stock.name}</td>
                         <td style="text-align: right; font-weight: 600;">${stock.price.toFixed(1)}</td>
-                        <td style="text-align: right;" ${colorClass}>${sign} ${Math.abs(stock.change).toFixed(2)}%</td>
-                        <td style="color: #94a3b8; font-size: 0.95rem;">${stock.desc}</td>
+                        <td ${colorStyle}>${sign} ${Math.abs(stock.change).toFixed(2)}%</td>
+                        <td style="color: #94a3b8; font-size: 0.95rem; padding-left: 15px;">${stock.desc}</td>
                     </tr>
                 `;
                 tbody.innerHTML += rowHtml;
@@ -294,6 +300,7 @@
         // 接收聊天室訊息
         socket.on('chat_msg', function(data) {
             const chatBox = document.getElementById('chat-messages');
+            if (!chatBox) return;
             const msgHtml = `
                 <div class="msg-line">
                     <img src="/static/uploads/${data.avatar}" class="msg-avatar" onerror="this.src='/static/uploads/default_avatar.png'">
@@ -304,13 +311,13 @@
                 </div>
             `;
             chatBox.innerHTML += msgHtml;
-            chatBox.scrollTop = chatBox.scrollHeight; // 自動滑動到最底下
+            chatBox.scrollTop = chatBox.scrollHeight;
         });
 
         // 傳送聊天訊息
         function sendMessage() {
             const input = document.getElementById('message-input');
-            if(input.value.trim()) {
+            if(input && input.value.trim()) {
                 socket.emit('send_msg', { room: currentRoom, msg: input.value.trim() });
                 input.value = '';
             }
@@ -318,17 +325,19 @@
 
         // 切換聊天室
         function switchRoom() {
-            const roomInput = document.getElementById('room-input').value.trim();
-            if(roomInput && roomInput !== currentRoom) {
-                currentRoom = roomInput;
-                document.getElementById('current-room-name').innerText = currentRoom;
-                document.getElementById('chat-messages').innerHTML = '';
-                socket.emit('join', { room: currentRoom });
-                document.getElementById('room-input').value = '';
+            const roomInput = document.getElementById('room-input');
+            if(roomInput && roomInput.value.trim()) {
+                const rName = roomInput.value.trim();
+                if (rName !== currentRoom) {
+                    currentRoom = rName;
+                    document.getElementById('current-room-name').innerText = currentRoom;
+                    document.getElementById('chat-messages').innerHTML = '';
+                    socket.emit('join', { room: currentRoom });
+                    roomInput.value = '';
+                }
             }
         }
 
-        // 綁定 Enter 送出鍵
         document.getElementById('message-input').addEventListener('keypress', function(e) {
             if(e.key === 'Enter') sendMessage();
         });
