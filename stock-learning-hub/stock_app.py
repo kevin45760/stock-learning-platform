@@ -46,7 +46,7 @@ with app.app_context():
         print("==== [Render 提示] SQLite 資料庫與資料表初始化/同步成功！ ====")
     except Exception as e:
         print(f"==== [Render 警告] 初始化資料庫時發生異常: {str(e)} ====") 
-        
+
 # 模擬台灣股市即時數據（每2秒會隨機跳動）
 STOCKS = {
     "2330 台積電": {"price": 950.0, "change": 0.0, "desc": "晶片巨頭，台灣的護國神山。"},
@@ -72,26 +72,49 @@ def dashboard():
 # 註冊 API（含自訂頭像上傳）
 @app.route('/api/register', methods=['POST'])
 def api_register():
-    username = request.form.get('username', '').strip()
-    password = request.form.get('password', '').strip()
-    
-    if not username or not password:
-        return jsonify({"success": False, "msg": "帳號或密碼不能留空！"})
-    if User.query.filter_by(username=username).first():
-        return jsonify({"success": False, "msg": "這個帳號已經有人註冊過囉！"})
-        
-    avatar_filename = 'default_avatar.png'
-    if 'avatar' in request.files:
-        file = request.files['avatar']
-        if file and file.filename != '':
-            avatar_filename = secure_filename(f"{username}_{file.filename}")
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], avatar_filename))
+    try:
+        username = request.form.get('username')
+        password = request.form.get('password')
 
-    hashed_pwd = generate_password_hash(password)
-    new_user = User(username=username, password_hash=hashed_pwd, avatar=avatar_filename)
-    db.session.add(new_user)
-    db.session.commit()
-    return jsonify({"success": True, "msg": "註冊成功！現在可以登入了。"})
+        if not username or not password:
+            return jsonify({'success': False, 'msg': '帳號與密碼為必填項目！'})
+
+        # 檢查帳號是否重複
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            return jsonify({'success': False, 'msg': '此帳號已被註冊，請換一個名字！'})
+
+        # 處理頭像上傳（加入極限安全防護）
+        avatar_filename = 'default_avatar.png'
+        if 'avatar' in request.files:
+            file = request.files['avatar']
+            if file and file.filename != '':
+                try:
+                    # 確保資料夾存在
+                    if not os.path.exists(app.config['UPLOAD_FOLDER']):
+                        os.makedirs(app.config['UPLOAD_FOLDER'])
+                    
+                    # 重新生成安全檔名並儲存
+                    base_secure = secure_filename(file.filename)
+                    avatar_filename = f"{username}_{random.randint(1000, 9999)}_{base_secure}"
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], avatar_filename))
+                except Exception as img_err:
+                    print(f" ==== [圖片儲存失敗，自動切換預設頭像]: {str(img_err)} ====")
+                    avatar_filename = 'default_avatar.png'
+
+        # 密碼加密並寫入資料庫
+        hashed_pwd = generate_password_hash(password, method='pbkdf2:sha256')
+        new_user = User(username=username, password_hash=hashed_pwd, avatar=avatar_filename)
+        
+        db.session.add(new_user)
+        db.session.commit()
+
+        return jsonify({'success': True, 'msg': '註冊成功！已為您創立魔法頭像，請切換至登入！'})
+
+    except Exception as total_err:
+        # 如果真的發生未知錯誤，至少要把錯誤訊息印在 Render Log 裡面給我們看，而不是默默死掉
+        print(f" ==== [註冊 API 內部核心崩潰]: {str(total_err)} ====")
+        return jsonify({'success': False, 'msg': f'後端系統寫入失敗：{str(total_err)}'})
 
 # 登入 API
 @app.route('/api/login', methods=['POST'])
