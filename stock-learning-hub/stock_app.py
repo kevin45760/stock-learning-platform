@@ -157,8 +157,9 @@ def handle_message(data):
         'msg': data['msg']
     }, room=room)
 
+# ----------------- 修正後的股市背景任務與異步過濾 -----------------
 def update_stock_market_loop():
-    # 1. 建立伺服器記憶體內的初始基本快取，防止剛開機網路極端卡頓
+    # 建立記憶體快取基地
     real_market_cache = {
         "2330": {"name": "2330 台積電", "price": 950.0, "change": 0.00, "desc": "晶片巨頭，台灣的護國神山。"},
         "2317": {"name": "2317 鴻海", "price": 200.0, "change": 0.00, "desc": "電子代工大廠，幫忙組裝 iPhone。"},
@@ -166,58 +167,50 @@ def update_stock_market_loop():
         "2603": {"name": "2603 長榮", "price": 180.0, "change": 0.00, "desc": "航運大戶，用大貨船幫全世界載運貨物。"}
     }
 
-    # 記住我們要過濾的四檔核心股票
     target_codes = ["2330", "2317", "2412", "2603"]
 
     while True:
-        socketio.sleep(5)  # 前端主面板每 5 秒實時刷新廣播一次
+        socketio.sleep(4)  # 🚀 每 4 秒安全推播一次
         stock_list = []
         
         try:
-            # 🚀 呼叫政府開放平臺：證交所每日收盤行情公開 API (不限 IP、永不過期)
             url = "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
             headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-            
-            # 設定超時，避免政府伺服器塞車時卡死
-            response = requests.get(url, headers=headers, timeout=4)
+            response = requests.get(url, headers=headers, timeout=5)
             
             if response.status_code == 200:
                 raw_data = response.json()
                 
-                # 掃描政府回傳的所有股票清單
-                for item in raw_data:
+                # 每掃描 100 筆資料就讓步給伺服器，防止 Socket 通道卡死
+                for index, item in enumerate(raw_data):
+                    if index % 100 == 0:
+                        socketio.sleep(0.001)
+                        
                     code = item.get('Code', '').strip()
-                    
                     if code in target_codes:
-                        # 擷取當前最新收盤價
                         price_str = item.get('ClosingPrice', '0').replace(',', '')
-                        # 擷取漲跌幅百分比（政府欄位通常直接提供或需要透過漲跌價計算，這裡防禦性轉換）
                         change_str = item.get('Change', '0').replace(',', '').replace('X', '')
                         
                         try:
-                            current_price = float(price_str) if price_str else real_market_cache[code]["price"]
+                            current_price = float(price_str) if price_str and price_str != '0' else real_market_cache[code]["price"]
                             change_val = float(change_str) if change_str else 0.0
                             
-                            # 計算大約的漲跌幅：漲跌價 / (收盤價 - 漲跌價) * 100
                             base_price = current_price - change_val
                             change_percent = (change_val / base_price * 100) if base_price > 0 else 0.0
                             
-                            # 更新至快取記憶體中
                             real_market_cache[code]["price"] = current_price
                             real_market_cache[code]["change"] = round(change_percent, 2)
                         except:
-                            pass # 轉換失敗時維持上一秒的快取數值
-            
+                            pass
+                            
         except Exception as e:
-            print(f"==== [政府 API 連線異常，自動切換本地快取運作]: {str(e)} ====")
+            print(f"==== [政府 API 解析異常或超時，自動切換本地防禦快取]: {str(e)} ====")
 
-        # 🚀 2. 炫麗動態優化：不論有沒有連上網路，都在真實收盤價地基上加上 ±0.05% 的逼真跳動
+        # 動態微幅閃爍演算法 (±0.04%)，增加視覺科技感
         import random
         for code in target_codes:
             cache = real_market_cache[code]
-            
-            # 隨機產生微幅跳動（模擬真實交易日盤中的微幅震盪）
-            market_flicker = random.uniform(-0.0005, 0.0005)
+            market_flicker = random.uniform(-0.0004, 0.0004)
             flicker_price = round(cache["price"] * (1 + market_flicker), 1)
             flicker_change = round(cache["change"] + (market_flicker * 100), 2)
             
@@ -228,10 +221,16 @@ def update_stock_market_loop():
                 "desc": cache["desc"]
             })
 
-        # 將數據推播給所有人
+        # 🚀 執行廣播
         socketio.emit('market_update', stock_list)
+
+# ----------------- 🚀 關鍵修正：確保開機時啟動背景執行緒 -----------------
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
+        
+    # 🔥 核心修正：利用 SocketIO 的 start_background_task 機制，強迫後端開機時把這個迴圈跑起來！
     socketio.start_background_task(update_stock_market_loop)
+    
+    # 啟動伺服器
     socketio.run(app, debug=True)
