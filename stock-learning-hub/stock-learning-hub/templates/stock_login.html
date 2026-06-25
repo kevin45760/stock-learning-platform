@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>📈 全民股神魔法學院 - 登入/註冊</title>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: white; text-align: center; padding-top: 50px; }
+        .box { width: 350px; margin: 0 auto; background: #1e293b; padding: 25px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+        input, select { width: 90%; padding: 10px; margin: 10px 0; border-radius: 6px; border: 1px solid #475569; background: #0f172a; color: white; }
+        button { width: 95%; padding: 10px; background: #38bdf8; border: none; color: #0f172a; font-weight: bold; border-radius: 6px; cursor: pointer; }
+        .toggle-link { color: #94a3b8; font-size: 0.9rem; cursor: pointer; text-decoration: underline; margin-top: 15px; display: inline-block; }
+    </style>
+</head>
+<body>
+    <h2>📈 全民股神魔法學院</h2>
+    <p>邊學看股市、邊與各路好手即時聊天切磋！</p>
+
+    <div class="box" id="form-box">
+        <h3 id="form-title">帳號登入</h3>
+        <form id="auth-form" enctype="multipart/form-data">
+            <input type="text" name="username" placeholder="請輸入帳號" required>
+            <input type="password" name="password" placeholder="請輸入密碼" required>
+            
+            <div id="avatar-upload-area" style="display: none; text-align: left; padding-left: 15px;">
+                <label style="font-size:0.85rem; color:#94a3b8;">上傳自訂頭像 (非必填)：</label>
+                <input type="file" name="avatar" accept="image/*">
+            </div>
+
+            <button type="submit" id="submit-btn">登入學院 🚀</button>
+        </form>
+        <div class="toggle-link" onclick="toggleMode()" id="toggle-text">沒有帳號？點我註冊一個</div>
+        <p id="msg" style="color:#ef4444; font-weight:bold; margin-top:10px;"></p>
+    </div>
+
+    <script>
+        let isLoginMode = true;
+
+        function toggleMode() {
+            isLoginMode = !isLoginMode;
+            document.getElementById('form-title').innerText = isLoginMode ? "帳號登入" : "建立全新帳號";
+            document.getElementById('submit-btn').innerText = isLoginMode ? "登入學院 🚀" : "註冊並創立頭像 ✨";
+            document.getElementById('toggle-text').innerText = isLoginMode ? "沒有帳號？點我註冊一個" : "已經有帳號了？點我登入";
+            document.getElementById('avatar-upload-area').style.display = isLoginMode ? "none" : "block";
+            document.getElementById('msg').innerText = "";
+        }
+
+        document.getElementById('auth-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const url = isLoginMode ? '/api/login' : '/api/register';
+
+            const response = await fetch(url, { method: 'POST', body: formData });
+            const data = await response.json();
+
+            if (data.success) {
+                if (isLoginMode) {
+                    window.location.href = '/dashboard';
+                } else {
+                    document.getElementById('msg').style.color = '#22c55e';
+                    document.getElementById('msg').innerText = data.msg;
+                    toggleMode(); // 註冊成功後自動跳回登入
+                }
+            } else {
+                document.getElementById('msg').style.color = '#ef4444';
+                document.getElementById('msg').innerText = data.msg;
+            }
+        });
+    </script>
+</body>
+</html>
