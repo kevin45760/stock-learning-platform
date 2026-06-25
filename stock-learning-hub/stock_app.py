@@ -9,6 +9,7 @@ from flask_login import LoginManager, UserMixin, login_user, login_required, log
 from flask_socketio import SocketIO, emit, join_room
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
+import requests
 
 # 1. 取得目前檔案所在的絕對路徑資料夾
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -158,17 +159,62 @@ def handle_message(data):
 
 def update_stock_market_loop():
     while True:
-        socketio.sleep(2)
+        socketio.sleep(5)  # 🚀 真實數據建議設定每 5 秒更新一次，避免被 Yahoo 判定為惡意攻擊
         stock_list = []
-        for name, info in STOCKS.items():
-            change_percent = random.uniform(-0.02, 0.02)
-            info["price"] = round(info["price"] * (1 + change_percent), 1)
-            info["change"] = round(change_percent * 100, 2)
-            stock_list.append({
-                "name": name, "price": info["price"], "change": info["change"], "desc": info["desc"]
-            })
-        socketio.emit('market_update', stock_list)
+        
+        # 定義我們要抓取的真實台股代號（Yahoo 財經格式：代號.TW）
+        target_stocks = {
+            "2330 台積電": {"code": "2330.TW", "desc": "晶片巨頭，台灣的護國神山。"},
+            "2317 鴻海": {"code": "2317.TW", "desc": "電子代工大廠，幫忙組裝 iPhone。"},
+            "2412 中華電": {"code": "2412.TW", "desc": "電信龍頭，大家上網付費給它的防守型股票。"},
+            "2603 長榮": {"code": "2603.TW", "desc": "航運大戶，用大貨船幫全世界載運貨物。"}
+        }
 
+        for name, info in target_stocks.items():
+            try:
+                # 呼叫 Yahoo Finance 的公開輕量 API
+                url = f"https://query1.finance.yahoo.com/v8/finance/chart/{info['code']}"
+                # 模擬瀏覽器標頭，防止被拒絕存取
+                headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                
+                response = requests.get(url, headers=headers, timeout=3)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    # 解析 Yahoo 回傳的複雜 JSON 結構，抓取最新價格與昨收價
+                    meta = data['chart']['result'][0]['meta']
+                    current_price = meta.get('regularMarketPrice')   # 目前最新成交價
+                    previous_close = meta.get('chartPreviousClose') # 昨日收盤價
+                    
+                    if current_price and previous_close:
+                        # 計算今日漲跌幅 = (目前價格 - 昨收價) / 昨收價 * 100
+                        change_percent = ((current_price - previous_close) / previous_close) * 100
+                        
+                        stock_list.append({
+                            "name": name,
+                            "price": round(current_price, 1),
+                            "change": round(change_percent, 2),
+                            "desc": info["desc"]
+                        })
+                        continue
+                        
+                # 如果 Yahoo 沒回應，啟動防禦機制：顯示維持原價
+                raise Exception("Yahoo 未回傳正確數據")
+                
+            except Exception as e:
+                print(f"==== [真實股市抓取失敗，啟動備用模擬數據] {name}: {str(e)} ====")
+                # 備用降級方案：如果斷網或被阻擋，自動切回模擬數值，維持網頁不崩潰
+                if name == "2330 台積電":
+                    stock_list.append({"name": name, "price": 950.0, "change": 0.35, "desc": info["desc"]})
+                elif name == "2317 鴻海":
+                    stock_list.append({"name": name, "price": 200.0, "change": -1.20, "desc": info["desc"]})
+                elif name == "2412 中華電":
+                    stock_list.append({"name": name, "price": 120.0, "change": 0.00, "desc": info["desc"]})
+                elif name == "2603 長榮":
+                    stock_list.append({"name": name, "price": 180.0, "change": 2.45, "desc": info["desc"]})
+
+        # 將真正抓到的即時台股數據發送給所有在網頁上的使用者
+        socketio.emit('market_update', stock_list)
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()

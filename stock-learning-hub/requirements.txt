@@ -7,3 +7,4 @@ eventlet==0.36.0
 werkzeug==3.0.1
 python-engineio==4.9.1
 python-socketio==5.11.2
+requests==2.31.0
