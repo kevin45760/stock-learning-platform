@@ -141,7 +141,7 @@ def api_register():
         avatar_name = f"user_{username}_{int(random.random()*10000)}{ext}"
         avatar_file.save(os.path.join(app.config['UPLOAD_FOLDER'], avatar_name))
 
-    hashed_password = generate_password_hash(password, method='scrypt')
+    hashed_password = generate_password_hash(password)
     new_user = User(username=username, password_hash=hashed_password, avatar=avatar_name)
     db.session.add(new_user)
     db.session.commit()
